@@ -25,6 +25,7 @@ const (
 	labelProcessUsername    = "__meta_process_username"
 	labelProcessUID         = "__meta_process_uid"
 	labelProcessContainerID = "__container_id__"
+	labelProcessCgroup      = "__meta_process_cgroup"
 )
 
 type process struct {
@@ -35,10 +36,11 @@ type process struct {
 	containerID string
 	username    string
 	uid         string
+	cgroup      string
 }
 
 func (p process) String() string {
-	return fmt.Sprintf("pid=%s exe=%s cwd=%s commandline=%s containerID=%s", p.pid, p.exe, p.cwd, p.commandline, p.containerID)
+	return fmt.Sprintf("pid=%s exe=%s cwd=%s commandline=%s containerID=%s cgroup=%s", p.pid, p.exe, p.cwd, p.commandline, p.containerID, p.cgroup)
 }
 
 func convertProcesses(ps []process) []discovery.Target {
@@ -71,6 +73,9 @@ func convertProcess(p process) discovery.Target {
 	if p.uid != "" {
 		t[labelProcessUID] = p.uid
 	}
+	if p.cgroup != "" {
+		t[labelProcessCgroup] = p.cgroup
+	}
 	return t
 }
 
@@ -92,7 +97,7 @@ func discover(l log.Logger, cfg *DiscoverConfig) ([]process, error) {
 	for _, p := range processes {
 		spid := fmt.Sprintf("%d", p.Pid)
 		var (
-			exe, cwd, commandline, containerID, username, uid string
+			exe, cwd, commandline, containerID, username, uid, cgroup string
 		)
 		if cfg.Exe {
 			exe, err = p.Exe()
@@ -139,6 +144,14 @@ func discover(l log.Logger, cfg *DiscoverConfig) ([]process, error) {
 				continue
 			}
 		}
+
+		if cfg.Cgroup {
+			cgroup, err = getLinuxProcessCgroup(spid)
+			if err != nil {
+				loge(int(p.Pid), err)
+				continue
+			}
+		}
 		res = append(res, process{
 			pid:         spid,
 			exe:         exe,
@@ -147,6 +160,7 @@ func discover(l log.Logger, cfg *DiscoverConfig) ([]process, error) {
 			containerID: containerID,
 			username:    username,
 			uid:         uid,
+			cgroup:      cgroup,
 		})
 	}
 
@@ -163,6 +177,21 @@ func getLinuxProcessContainerID(pid string) (string, error) {
 		cid := getContainerIDFromCGroup(cgroup)
 		if cid != "" {
 			return cid, nil
+		}
+	}
+	return "", nil
+}
+
+func getLinuxProcessCgroup(pid string) (string, error) {
+	if runtime.GOOS == "linux" {
+		cgroup, err := os.Open(path.Join("/proc", pid, "cgroup"))
+		if err != nil {
+			return "", err
+		}
+		defer cgroup.Close()
+		cgroupText := getCgroupFromCGroupFile(cgroup)
+		if cgroupText  != "" {
+			return cgroupText, nil
 		}
 	}
 	return "", nil

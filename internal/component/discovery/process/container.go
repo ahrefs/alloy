@@ -29,6 +29,14 @@ func getContainerIDFromCGroup(cgroup io.Reader) string {
 	return ""
 }
 
+func getCgroupFromCGroupFile(cgroup io.Reader) string {
+	scanner := bufio.NewScanner(cgroup)
+	for scanner.Scan() {
+		return scanner.Text()
+	}
+	return ""
+}
+
 var knownContainerIDPrefixes = []string{"docker://", "containerd://", "cri-o://"}
 
 // get container id from __meta_kubernetes_pod_container_id label
